@@ -15,6 +15,7 @@ jest.mock('@librechat/api', () => ({
   checkAccess: jest.fn(),
   initializeAgent: jest.fn(),
   createMemoryProcessor: jest.fn(),
+  createSafeUser: jest.fn((user) => ({ id: user?.id })),
 }));
 
 jest.mock('~/models/Agent', () => ({
@@ -27,9 +28,11 @@ jest.mock('~/models/Role', () => ({
 
 // Mock getMCPManager
 const mockFormatInstructions = jest.fn();
+const mockGetConnection = jest.fn();
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
     formatInstructionsForContext: mockFormatInstructions,
+    getConnection: mockGetConnection,
   })),
 }));
 
@@ -2254,6 +2257,246 @@ describe('AgentClient - titleConvo', () => {
           }),
         }),
         expect.any(Object),
+      );
+    });
+  });
+
+  describe('executeStartActions', () => {
+    let client;
+
+    const makeConnection = (result) => ({
+      timeout: 30000,
+      client: {
+        request: jest.fn().mockResolvedValue(result),
+      },
+    });
+
+    const textResult = (text) => ({
+      content: [{ type: 'text', text }],
+    });
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      client = new AgentClient({
+        req: { user: { id: 'user-1' } },
+        res: {},
+        agent: {
+          id: 'agent-1',
+          endpoint: EModelEndpoint.openAI,
+          provider: EModelEndpoint.openAI,
+          model_parameters: { model: 'gpt-4' },
+          start_actions: [],
+          additional_instructions: null,
+        },
+      });
+    });
+
+    it('should no-op when start_actions is empty', async () => {
+      await client.executeStartActions({});
+      expect(mockGetConnection).not.toHaveBeenCalled();
+      expect(client.options.agent.additional_instructions).toBeNull();
+    });
+
+    it('should no-op when start_actions is undefined', async () => {
+      client.options.agent.start_actions = undefined;
+      await client.executeStartActions({});
+      expect(mockGetConnection).not.toHaveBeenCalled();
+    });
+
+    it('should inject ambient context from a single tool', async () => {
+      client.options.agent.start_actions = [
+        { server: 'health-log', tool: 'query_timeline' },
+      ];
+
+      const conn = makeConnection(textResult('Took Tylenol 500mg at 8am'));
+      mockGetConnection.mockResolvedValue(conn);
+
+      await client.executeStartActions({});
+
+      expect(mockGetConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'health-log' }),
+      );
+      expect(conn.client.request).toHaveBeenCalledWith(
+        { method: 'tools/call', params: { name: 'query_timeline', arguments: {} } },
+        expect.anything(),
+        expect.objectContaining({ timeout: 30000 }),
+      );
+
+      const instructions = client.options.agent.additional_instructions;
+      expect(instructions).toContain('## Ambient Context');
+      expect(instructions).toContain('Automatically gathered before this response');
+      expect(instructions).toContain('### health-log / query_timeline');
+      expect(instructions).toContain('Took Tylenol 500mg at 8am');
+    });
+
+    it('should concatenate results from multiple tools', async () => {
+      client.options.agent.start_actions = [
+        { server: 'health-log', tool: 'query_timeline' },
+        { server: 'ha-dev', tool: 'get_live_context' },
+      ];
+
+      mockGetConnection
+        .mockResolvedValueOnce(makeConnection(textResult('Timeline data')))
+        .mockResolvedValueOnce(makeConnection(textResult('Room is 72°F')));
+
+      await client.executeStartActions({});
+
+      const instructions = client.options.agent.additional_instructions;
+      expect(instructions).toContain('### health-log / query_timeline');
+      expect(instructions).toContain('Timeline data');
+      expect(instructions).toContain('### ha-dev / get_live_context');
+      expect(instructions).toContain('Room is 72°F');
+    });
+
+    it('should preserve existing additional_instructions', async () => {
+      client.options.agent.additional_instructions = 'Always be kind.';
+      client.options.agent.start_actions = [
+        { server: 'srv', tool: 'tool1' },
+      ];
+      mockGetConnection.mockResolvedValue(makeConnection(textResult('data')));
+
+      await client.executeStartActions({});
+
+      const instructions = client.options.agent.additional_instructions;
+      expect(instructions.startsWith('Always be kind.')).toBe(true);
+      expect(instructions).toContain('## Ambient Context');
+      expect(instructions).toContain('data');
+    });
+
+    it('should pass args to the tool call', async () => {
+      client.options.agent.start_actions = [
+        { server: 'srv', tool: 'query', args: { start: 'last_24h' } },
+      ];
+
+      const conn = makeConnection(textResult('results'));
+      mockGetConnection.mockResolvedValue(conn);
+
+      await client.executeStartActions({});
+
+      expect(conn.client.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          params: { name: 'query', arguments: { start: 'last_24h' } },
+        }),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('should fail-open when a tool throws', async () => {
+      client.options.agent.start_actions = [
+        { server: 'broken', tool: 'fail_tool' },
+        { server: 'ok', tool: 'good_tool' },
+      ];
+
+      mockGetConnection
+        .mockRejectedValueOnce(new Error('Connection refused'))
+        .mockResolvedValueOnce(makeConnection(textResult('good data')));
+
+      await client.executeStartActions({});
+
+      const instructions = client.options.agent.additional_instructions;
+      expect(instructions).toContain('good data');
+      expect(instructions).not.toContain('broken');
+    });
+
+    it('should not inject context when all tools fail', async () => {
+      client.options.agent.start_actions = [
+        { server: 'broken', tool: 'fail1' },
+      ];
+
+      mockGetConnection.mockRejectedValue(new Error('down'));
+
+      await client.executeStartActions({});
+
+      expect(client.options.agent.additional_instructions).toBeNull();
+    });
+
+    it('should truncate context exceeding 8000 chars', async () => {
+      const longText = 'x'.repeat(9000);
+      client.options.agent.start_actions = [
+        { server: 'srv', tool: 'big' },
+      ];
+      mockGetConnection.mockResolvedValue(makeConnection(textResult(longText)));
+
+      await client.executeStartActions({});
+
+      const instructions = client.options.agent.additional_instructions;
+      expect(instructions).toContain('[truncated]');
+      const ambientStart = instructions.indexOf('## Ambient Context');
+      const ambientSection = instructions.slice(ambientStart);
+      const bodyStart = ambientSection.indexOf('### srv / big');
+      const bodySection = ambientSection.slice(bodyStart);
+      expect(bodySection.length).toBeLessThan(9000);
+    });
+
+    it('should skip empty content results', async () => {
+      client.options.agent.start_actions = [
+        { server: 'srv', tool: 'empty' },
+      ];
+
+      mockGetConnection.mockResolvedValue(
+        makeConnection({ content: [{ type: 'text', text: '' }] }),
+      );
+
+      await client.executeStartActions({});
+
+      expect(client.options.agent.additional_instructions).toBeNull();
+    });
+
+    it('should serialize non-text content items as JSON', async () => {
+      client.options.agent.start_actions = [
+        { server: 'srv', tool: 'img' },
+      ];
+
+      mockGetConnection.mockResolvedValue(
+        makeConnection({
+          content: [{ type: 'image', data: 'base64stuff', mimeType: 'image/png' }],
+        }),
+      );
+
+      await client.executeStartActions({});
+
+      const instructions = client.options.agent.additional_instructions;
+      expect(instructions).toContain('"type": "image"');
+      expect(instructions).toContain('base64stuff');
+    });
+
+    it('should pass customUserVars from userMCPAuthMap', async () => {
+      client.options.agent.start_actions = [
+        { server: 'health-log', tool: 'query_timeline' },
+      ];
+
+      const authMap = {
+        [`${Constants.mcp_prefix}health-log`]: { token: 'secret-123' },
+      };
+
+      mockGetConnection.mockResolvedValue(makeConnection(textResult('data')));
+
+      await client.executeStartActions({ userMCPAuthMap: authMap });
+
+      expect(mockGetConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'health-log',
+          customUserVars: { token: 'secret-123' },
+        }),
+      );
+    });
+
+    it('should pass abortController signal to the request', async () => {
+      client.options.agent.start_actions = [
+        { server: 'srv', tool: 'tool1' },
+      ];
+
+      const conn = makeConnection(textResult('data'));
+      mockGetConnection.mockResolvedValue(conn);
+      const ac = new AbortController();
+
+      await client.executeStartActions({ abortController: ac });
+
+      expect(conn.client.request).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ signal: ac.signal }),
       );
     });
   });

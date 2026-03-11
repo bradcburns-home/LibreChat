@@ -842,76 +842,7 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
-      const startActions = this.options.agent.start_actions;
-      if (startActions?.length > 0) {
-        const AMBIENT_CONTEXT_MAX_CHARS = 8000;
-        const ambientParts = [];
-        const mcpMgr = getMCPManager();
-
-        for (const action of startActions) {
-          try {
-            const connection = await mcpMgr.getConnection({
-              serverName: action.server,
-              user: createSafeUser(this.options.req?.user),
-            });
-
-            const result = await connection.client.request(
-              {
-                method: 'tools/call',
-                params: {
-                  name: action.tool,
-                  arguments: action.args ?? {},
-                },
-              },
-              CallToolResultSchema,
-              {
-                timeout: connection.timeout,
-                resetTimeoutOnProgress: true,
-                signal: abortController?.signal,
-              },
-            );
-
-            const content = (result?.content ?? [])
-              .map((item) => {
-                if (item.type === 'text') {
-                  return item.text;
-                }
-                return JSON.stringify(item, null, 2);
-              })
-              .filter(Boolean)
-              .join('\n\n');
-
-            if (content) {
-              ambientParts.push(`### ${action.server} / ${action.tool}\n${content}`);
-            }
-          } catch (err) {
-            logger.warn(
-              `[StartActions] ${action.server}/${action.tool} failed: ${err.message}`,
-            );
-          }
-        }
-
-        if (ambientParts.length > 0) {
-          let ambientBody = ambientParts.join('\n\n');
-          if (ambientBody.length > AMBIENT_CONTEXT_MAX_CHARS) {
-            logger.warn(
-              `[StartActions] Ambient context truncated: ${ambientBody.length} chars exceeded ` +
-                `${AMBIENT_CONTEXT_MAX_CHARS} char limit`,
-            );
-            ambientBody =
-              ambientBody.slice(0, AMBIENT_CONTEXT_MAX_CHARS) + '\n\n[truncated]';
-          }
-          const ambientContext =
-            '\n\n## Ambient Context\n\n' +
-            'Automatically gathered before this response. Review before engaging.\n\n' +
-            ambientBody;
-          const sysMsg = initialMessages.find((m) => m._getType?.() === 'system');
-          if (sysMsg) {
-            sysMsg.content =
-              (typeof sysMsg.content === 'string' ? sysMsg.content : '') + ambientContext;
-          }
-        }
-      }
+      await this.executeStartActions({ userMCPAuthMap, abortController });
 
       const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
@@ -974,6 +905,89 @@ class AgentClient extends BaseClient {
       run = null;
       config = null;
       memoryPromise = null;
+    }
+  }
+
+  /**
+   * Execute start_actions: call MCP tools and inject results as ambient context
+   * into additional_instructions before the agent run begins.
+   *
+   * @param {Object} params
+   * @param {Object} [params.userMCPAuthMap] - Per-user MCP auth tokens
+   * @param {AbortController} [params.abortController]
+   */
+  async executeStartActions({ userMCPAuthMap, abortController } = {}) {
+    const AMBIENT_CONTEXT_MAX_CHARS = 8000;
+    const startActions = this.options.agent.start_actions;
+    if (!startActions?.length) {
+      return;
+    }
+
+    const ambientParts = [];
+    const mcpMgr = getMCPManager();
+
+    for (const action of startActions) {
+      try {
+        const customUserVars =
+          userMCPAuthMap?.[`${Constants.mcp_prefix}${action.server}`];
+        const connection = await mcpMgr.getConnection({
+          serverName: action.server,
+          user: createSafeUser(this.options.req?.user),
+          customUserVars,
+        });
+
+        const result = await connection.client.request(
+          {
+            method: 'tools/call',
+            params: {
+              name: action.tool,
+              arguments: action.args ?? {},
+            },
+          },
+          CallToolResultSchema,
+          {
+            timeout: connection.timeout,
+            resetTimeoutOnProgress: true,
+            signal: abortController?.signal,
+          },
+        );
+
+        const content = (result?.content ?? [])
+          .map((item) => {
+            if (item.type === 'text') {
+              return item.text;
+            }
+            return JSON.stringify(item, null, 2);
+          })
+          .filter(Boolean)
+          .join('\n\n');
+
+        if (content) {
+          ambientParts.push(`### ${action.server} / ${action.tool}\n${content}`);
+        }
+      } catch (err) {
+        logger.warn(
+          `[StartActions] ${action.server}/${action.tool} failed: ${err.message}`,
+        );
+      }
+    }
+
+    if (ambientParts.length > 0) {
+      let ambientBody = ambientParts.join('\n\n');
+      if (ambientBody.length > AMBIENT_CONTEXT_MAX_CHARS) {
+        logger.warn(
+          `[StartActions] Ambient context truncated: ${ambientBody.length} chars exceeded ` +
+            `${AMBIENT_CONTEXT_MAX_CHARS} char limit`,
+        );
+        ambientBody =
+          ambientBody.slice(0, AMBIENT_CONTEXT_MAX_CHARS) + '\n\n[truncated]';
+      }
+      const ambientContext =
+        '\n\n## Ambient Context\n\n' +
+        'Automatically gathered before this response. Review before engaging.\n\n' +
+        ambientBody;
+      this.options.agent.additional_instructions =
+        (this.options.agent.additional_instructions ?? '') + ambientContext;
     }
   }
 
