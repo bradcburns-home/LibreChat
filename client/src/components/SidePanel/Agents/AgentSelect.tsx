@@ -135,6 +135,11 @@ function AgentSelect({
           return;
         }
 
+        if (name === 'start_actions' && Array.isArray(value)) {
+          formValues[name] = value;
+          return;
+        }
+
         if (!keys.has(name)) {
           return;
         }

@@ -39,6 +39,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   agent_ids?: string[];
   edges?: GraphEdge[];
   conversation_starters?: string[];
+  start_actions?: Array<{ server: string; tool: string; args?: Record<string, unknown> }>;
   tool_resources?: AgentToolResources;
   versions?: Omit<IAgent, 'versions'>[];
   category: string;

@@ -274,6 +274,7 @@ export type Agent = {
   model: string | null;
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
+  start_actions?: Array<{ server: string; tool: string; args?: Record<string, unknown> }>;
   tool_resources?: AgentToolResources;
   /** @deprecated Use edges instead */
   agent_ids?: string[];
@@ -323,6 +324,7 @@ export type AgentCreateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'start_actions'
 >;
 
 export type AgentUpdateParams = {
@@ -350,6 +352,7 @@ export type AgentUpdateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'start_actions'
 >;
 
 export type AgentListParams = {
