@@ -28,6 +28,7 @@ import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
+import StartActions from './StartActions';
 import MCPTools from './MCPTools';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
@@ -312,6 +313,11 @@ export default function AgentConfig() {
             mcpServerNames={mcpServerNames}
             setShowMCPToolDialog={setShowMCPToolDialog}
           />
+        )}
+
+        {/* Start Actions (ambient context) */}
+        {availableMCPServers != null && availableMCPServers.length > 0 && (
+          <StartActions mcpServerNames={mcpServerNames} />
         )}
 
         {/* Agent Tools & Actions */}

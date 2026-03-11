@@ -84,6 +84,10 @@ const agentSchema = new Schema<IAgent>(
       type: [String],
       default: [],
     },
+    start_actions: {
+      type: [{ type: Schema.Types.Mixed }],
+      default: [],
+    },
     tool_resources: {
       type: Schema.Types.Mixed,
       default: {},

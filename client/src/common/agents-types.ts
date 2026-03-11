@@ -38,6 +38,7 @@ export type AgentForm = {
   tools?: string[];
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
+  start_actions?: Array<{ server: string; tool: string; args?: Record<string, unknown> }>;
   provider?: AgentProvider | OptionWithIcon;
   /** @deprecated Use edges instead */
   agent_ids?: string[];

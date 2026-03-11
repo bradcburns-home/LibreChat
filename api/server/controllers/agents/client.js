@@ -53,6 +53,7 @@ const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
+const { CallToolResultSchema } = require('@modelcontextprotocol/sdk/types.js');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
@@ -840,6 +841,77 @@ class AgentClient extends BaseClient {
 
         config.signal = null;
       };
+
+      const startActions = this.options.agent.start_actions;
+      if (startActions?.length > 0) {
+        const AMBIENT_CONTEXT_MAX_CHARS = 8000;
+        const ambientParts = [];
+        const mcpMgr = getMCPManager();
+
+        for (const action of startActions) {
+          try {
+            const connection = await mcpMgr.getConnection({
+              serverName: action.server,
+              user: createSafeUser(this.options.req?.user),
+            });
+
+            const result = await connection.client.request(
+              {
+                method: 'tools/call',
+                params: {
+                  name: action.tool,
+                  arguments: action.args ?? {},
+                },
+              },
+              CallToolResultSchema,
+              {
+                timeout: connection.timeout,
+                resetTimeoutOnProgress: true,
+                signal: abortController?.signal,
+              },
+            );
+
+            const content = (result?.content ?? [])
+              .map((item) => {
+                if (item.type === 'text') {
+                  return item.text;
+                }
+                return JSON.stringify(item, null, 2);
+              })
+              .filter(Boolean)
+              .join('\n\n');
+
+            if (content) {
+              ambientParts.push(`### ${action.server} / ${action.tool}\n${content}`);
+            }
+          } catch (err) {
+            logger.warn(
+              `[StartActions] ${action.server}/${action.tool} failed: ${err.message}`,
+            );
+          }
+        }
+
+        if (ambientParts.length > 0) {
+          let ambientBody = ambientParts.join('\n\n');
+          if (ambientBody.length > AMBIENT_CONTEXT_MAX_CHARS) {
+            logger.warn(
+              `[StartActions] Ambient context truncated: ${ambientBody.length} chars exceeded ` +
+                `${AMBIENT_CONTEXT_MAX_CHARS} char limit`,
+            );
+            ambientBody =
+              ambientBody.slice(0, AMBIENT_CONTEXT_MAX_CHARS) + '\n\n[truncated]';
+          }
+          const ambientContext =
+            '\n\n## Ambient Context\n\n' +
+            'Automatically gathered before this response. Review before engaging.\n\n' +
+            ambientBody;
+          const sysMsg = initialMessages.find((m) => m._getType?.() === 'system');
+          if (sysMsg) {
+            sysMsg.content =
+              (typeof sysMsg.content === 'string' ? sysMsg.content : '') + ambientContext;
+          }
+        }
+      }
 
       const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);

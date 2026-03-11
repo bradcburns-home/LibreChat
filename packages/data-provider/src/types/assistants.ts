@@ -259,6 +259,7 @@ export type Agent = {
   model: string | null;
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
+  start_actions?: Array<{ server: string; tool: string; args?: Record<string, unknown> }>;
   /** @deprecated Use ACL permissions instead */
   isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
@@ -300,6 +301,7 @@ export type AgentCreateParams = {
   | 'category'
   | 'support_contact'
   | 'tool_options'
+  | 'start_actions'
 >;
 
 export type AgentUpdateParams = {
@@ -327,6 +329,7 @@ export type AgentUpdateParams = {
   | 'category'
   | 'support_contact'
   | 'tool_options'
+  | 'start_actions'
 >;
 
 export type AgentListParams = {
