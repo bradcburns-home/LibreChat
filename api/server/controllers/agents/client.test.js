@@ -2289,6 +2289,7 @@ describe('AgentClient - titleConvo', () => {
           additional_instructions: null,
         },
       });
+      client.contentParts = [];
     });
 
     it('should no-op when start_actions is empty', async () => {
@@ -2498,6 +2499,133 @@ describe('AgentClient - titleConvo', () => {
         expect.anything(),
         expect.objectContaining({ signal: ac.signal }),
       );
+    });
+
+    describe('contentParts integration (post-runAgents unshift)', () => {
+      const { ContentTypes } = require('librechat-data-provider');
+
+      it('should unshift ambient_context into contentParts after graph content is present', async () => {
+        client.options.agent.start_actions = [
+          { server: 'health-log', tool: 'query_timeline' },
+        ];
+        mockGetConnection.mockResolvedValue(makeConnection(textResult('Took Tylenol')));
+
+        const ambientBody = await client.executeStartActions({});
+
+        client.contentParts.push({ type: 'text', text: 'LLM response here' });
+
+        if (ambientBody && client.contentParts) {
+          client.contentParts.unshift({
+            type: ContentTypes.AMBIENT_CONTEXT,
+            [ContentTypes.AMBIENT_CONTEXT]: ambientBody,
+          });
+        }
+
+        expect(client.contentParts[0].type).toBe('ambient_context');
+        expect(client.contentParts[0].ambient_context).toContain('Took Tylenol');
+        expect(client.contentParts[1]).toEqual({ type: 'text', text: 'LLM response here' });
+      });
+
+      it('should not unshift when executeStartActions returns undefined', async () => {
+        client.options.agent.start_actions = [];
+
+        const ambientBody = await client.executeStartActions({});
+
+        client.contentParts.push({ type: 'text', text: 'LLM response' });
+
+        if (ambientBody && client.contentParts) {
+          client.contentParts.unshift({
+            type: ContentTypes.AMBIENT_CONTEXT,
+            [ContentTypes.AMBIENT_CONTEXT]: ambientBody,
+          });
+        }
+
+        expect(client.contentParts).toHaveLength(1);
+        expect(client.contentParts[0]).toEqual({ type: 'text', text: 'LLM response' });
+      });
+
+      it('should preserve multiple graph parts when ambient context is unshifted', async () => {
+        client.options.agent.start_actions = [
+          { server: 'srv', tool: 'tool1' },
+        ];
+        mockGetConnection.mockResolvedValue(makeConnection(textResult('context data')));
+
+        const ambientBody = await client.executeStartActions({});
+
+        client.contentParts.push({ type: 'tool_call', tool_call: {} });
+        client.contentParts.push({ type: 'text', text: 'Final answer' });
+
+        if (ambientBody && client.contentParts) {
+          client.contentParts.unshift({
+            type: ContentTypes.AMBIENT_CONTEXT,
+            [ContentTypes.AMBIENT_CONTEXT]: ambientBody,
+          });
+        }
+
+        expect(client.contentParts).toHaveLength(3);
+        expect(client.contentParts[0].type).toBe('ambient_context');
+        expect(client.contentParts[1].type).toBe('tool_call');
+        expect(client.contentParts[2].type).toBe('text');
+        expect(client.contentParts[2].text).toBe('Final answer');
+      });
+    });
+
+    describe('ambient body return value', () => {
+      it('should return the formatted ambient body when tools succeed', async () => {
+        client.options.agent.start_actions = [
+          { server: 'health-log', tool: 'query_timeline' },
+        ];
+        mockGetConnection.mockResolvedValue(makeConnection(textResult('Took Tylenol')));
+
+        const result = await client.executeStartActions({});
+
+        expect(result).toContain('### health-log / query_timeline');
+        expect(result).toContain('Took Tylenol');
+      });
+
+      it('should include formatted tool headers from multiple tools', async () => {
+        client.options.agent.start_actions = [
+          { server: 'srv-a', tool: 'tool1' },
+          { server: 'srv-b', tool: 'tool2' },
+        ];
+        mockGetConnection
+          .mockResolvedValueOnce(makeConnection(textResult('data-a')))
+          .mockResolvedValueOnce(makeConnection(textResult('data-b')));
+
+        const result = await client.executeStartActions({});
+
+        expect(result).toContain('### srv-a / tool1');
+        expect(result).toContain('data-a');
+        expect(result).toContain('### srv-b / tool2');
+        expect(result).toContain('data-b');
+      });
+
+      it('should return undefined when all tools fail', async () => {
+        client.options.agent.start_actions = [
+          { server: 'broken', tool: 'fail1' },
+        ];
+        mockGetConnection.mockRejectedValue(new Error('down'));
+
+        const result = await client.executeStartActions({});
+
+        expect(result).toBeUndefined();
+      });
+
+      it('should return undefined when start_actions is empty', async () => {
+        const result = await client.executeStartActions({});
+        expect(result).toBeUndefined();
+      });
+
+      it('should include [truncated] when body exceeds limit', async () => {
+        client.options.agent.start_actions = [
+          { server: 'srv', tool: 'big' },
+        ];
+        mockGetConnection.mockResolvedValue(makeConnection(textResult('x'.repeat(9000))));
+
+        const result = await client.executeStartActions({});
+
+        expect(result).toContain('[truncated]');
+      });
     });
   });
 });

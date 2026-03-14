@@ -49,6 +49,7 @@ export namespace Agents {
   export type MessageContentComplex =
     | ReasoningContentText
     | AgentUpdate
+    | AmbientContextPart
     | MessageContentText
     | MessageContentImageUrl
     | MessageContentVideoUrl
@@ -306,12 +307,14 @@ export namespace Agents {
   }
 
   export type ReasoningDeltaUpdate = { type: ContentTypes.THINK; think: string };
+  export type AmbientContextPart = { type: ContentTypes.AMBIENT_CONTEXT; ambient_context: string };
   export type ContentType =
     | ContentTypes.THINK
     | ContentTypes.TEXT
     | ContentTypes.IMAGE_URL
     | ContentTypes.VIDEO_URL
     | ContentTypes.INPUT_AUDIO
+    | ContentTypes.AMBIENT_CONTEXT
     | string;
 }
 

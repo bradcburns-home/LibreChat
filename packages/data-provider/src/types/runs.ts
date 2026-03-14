@@ -8,6 +8,7 @@ export enum ContentTypes {
   VIDEO_URL = 'video_url',
   INPUT_AUDIO = 'input_audio',
   AGENT_UPDATE = 'agent_update',
+  AMBIENT_CONTEXT = 'ambient_context',
   ERROR = 'error',
 }
 
