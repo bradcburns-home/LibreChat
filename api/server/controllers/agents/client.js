@@ -318,6 +318,12 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
+      if (Array.isArray(formattedMessage.content)) {
+        formattedMessage.content = formattedMessage.content.filter(
+          (part) => part.type !== ContentTypes.AMBIENT_CONTEXT,
+        );
+      }
+
       /** For non-latest messages, prepend file context directly to message content */
       if (message.fileContext && i !== orderedMessages.length - 1) {
         if (typeof formattedMessage.content === 'string') {
@@ -1061,7 +1067,7 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
-      await this.executeStartActions({ userMCPAuthMap, abortController });
+      const ambientBody = await this.executeStartActions({ userMCPAuthMap, abortController });
 
       const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
@@ -1101,6 +1107,13 @@ class AgentClient extends BaseClient {
         const runId = this.responseMessageId ?? 'skill-prime';
         const manualParts = buildSkillPrimeContentParts(manualPrimed, { runId });
         this.contentParts.unshift(...manualParts);
+      }
+
+      if (ambientBody && this.contentParts) {
+        this.contentParts.unshift({
+          type: ContentTypes.AMBIENT_CONTEXT,
+          [ContentTypes.AMBIENT_CONTEXT]: ambientBody,
+        });
       }
 
       /** @deprecated Agent Chain */
@@ -1259,6 +1272,8 @@ class AgentClient extends BaseClient {
         ambientBody;
       this.options.agent.additional_instructions =
         (this.options.agent.additional_instructions ?? '') + ambientContext;
+
+      return ambientBody;
     }
   }
 

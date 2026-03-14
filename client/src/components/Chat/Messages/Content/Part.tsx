@@ -20,6 +20,7 @@ import {
   ReadFileCall,
   BashCall,
   SubagentCall,
+  AmbientContext,
 } from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
@@ -124,6 +125,15 @@ const Part = memo(function Part({
         summarizing={part.summarizing}
       />
     );
+  } else if (part.type === ContentTypes.AMBIENT_CONTEXT) {
+    const context =
+      typeof part[ContentTypes.AMBIENT_CONTEXT] === 'string'
+        ? part[ContentTypes.AMBIENT_CONTEXT]
+        : '';
+    if (!context) {
+      return null;
+    }
+    return <AmbientContext context={context} />;
   } else if (part.type === ContentTypes.TOOL_CALL) {
     const toolCall = part[ContentTypes.TOOL_CALL];
 

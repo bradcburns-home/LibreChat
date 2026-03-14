@@ -9,6 +9,7 @@ export enum ContentTypes {
   INPUT_AUDIO = 'input_audio',
   AGENT_UPDATE = 'agent_update',
   SUMMARY = 'summary',
+  AMBIENT_CONTEXT = 'ambient_context',
   ERROR = 'error',
 }
 
