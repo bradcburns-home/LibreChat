@@ -1208,6 +1208,46 @@ class AgentClient extends BaseClient {
     }
 
     const ambientParts = [];
+
+    const tz = 'America/Detroit';
+    const now = new Date();
+    const fmtParts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        weekday: 'long',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+      })
+        .formatToParts(now)
+        .map(({ type, value }) => [type, value]),
+    );
+    const DAY_TO_ISO = {
+      Monday: 1,
+      Tuesday: 2,
+      Wednesday: 3,
+      Thursday: 4,
+      Friday: 5,
+      Saturday: 6,
+      Sunday: 7,
+    };
+    const utcMs = Date.parse(now.toLocaleString('en-US', { timeZone: 'UTC' }));
+    const localMs = Date.parse(now.toLocaleString('en-US', { timeZone: tz }));
+    const diffMin = (localMs - utcMs) / 60000;
+    const sign = diffMin >= 0 ? '+' : '-';
+    const abs = Math.abs(diffMin);
+    const offset = `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}${String(abs % 60).padStart(2, '0')}`;
+    const isoDay = DAY_TO_ISO[fmtParts.weekday];
+    const timeStr =
+      `${fmtParts.year}-${fmtParts.month}-${fmtParts.day}T` +
+      `${fmtParts.hour}:${fmtParts.minute}:${fmtParts.second}${offset} ` +
+      `(${fmtParts.weekday}, ISO day ${isoDay})`;
+    ambientParts.push(`### Current Time\n${timeStr}`);
+
     const mcpMgr = getMCPManager();
 
     for (const action of startActions) {
