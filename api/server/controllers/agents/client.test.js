@@ -2400,7 +2400,7 @@ describe('AgentClient - titleConvo', () => {
       expect(instructions).not.toContain('broken');
     });
 
-    it('should not inject context when all tools fail', async () => {
+    it('should still inject current time when all tools fail', async () => {
       client.options.agent.start_actions = [
         { server: 'broken', tool: 'fail1' },
       ];
@@ -2409,7 +2409,9 @@ describe('AgentClient - titleConvo', () => {
 
       await client.executeStartActions({});
 
-      expect(client.options.agent.additional_instructions).toBeNull();
+      const instructions = client.options.agent.additional_instructions;
+      expect(instructions).toContain('### Current Time');
+      expect(instructions).not.toContain('### broken / fail1');
     });
 
     it('should truncate context exceeding 8000 chars', async () => {
@@ -2430,7 +2432,7 @@ describe('AgentClient - titleConvo', () => {
       expect(bodySection.length).toBeLessThan(9000);
     });
 
-    it('should skip empty content results', async () => {
+    it('should skip empty content results but still inject current time', async () => {
       client.options.agent.start_actions = [
         { server: 'srv', tool: 'empty' },
       ];
@@ -2441,7 +2443,9 @@ describe('AgentClient - titleConvo', () => {
 
       await client.executeStartActions({});
 
-      expect(client.options.agent.additional_instructions).toBeNull();
+      const instructions = client.options.agent.additional_instructions;
+      expect(instructions).toContain('### Current Time');
+      expect(instructions).not.toContain('### srv / empty');
     });
 
     it('should serialize non-text content items as JSON', async () => {
@@ -2600,7 +2604,7 @@ describe('AgentClient - titleConvo', () => {
         expect(result).toContain('data-b');
       });
 
-      it('should return undefined when all tools fail', async () => {
+      it('should return current time only when all tools fail', async () => {
         client.options.agent.start_actions = [
           { server: 'broken', tool: 'fail1' },
         ];
@@ -2608,7 +2612,8 @@ describe('AgentClient - titleConvo', () => {
 
         const result = await client.executeStartActions({});
 
-        expect(result).toBeUndefined();
+        expect(result).toContain('### Current Time');
+        expect(result).not.toContain('### broken / fail1');
       });
 
       it('should return undefined when start_actions is empty', async () => {
@@ -2625,6 +2630,50 @@ describe('AgentClient - titleConvo', () => {
         const result = await client.executeStartActions({});
 
         expect(result).toContain('[truncated]');
+      });
+    });
+
+    describe('current time injection', () => {
+      it('should include current time as the first section in ambientBody', async () => {
+        client.options.agent.start_actions = [
+          { server: 'health-log', tool: 'query_timeline' },
+        ];
+        mockGetConnection.mockResolvedValue(makeConnection(textResult('Took Tylenol')));
+
+        const result = await client.executeStartActions({});
+
+        expect(result).toMatch(/^### Current Time\n/);
+        expect(result.indexOf('### Current Time')).toBeLessThan(
+          result.indexOf('### health-log / query_timeline'),
+        );
+      });
+
+      it('should match the current_time MCP tool format', async () => {
+        client.options.agent.start_actions = [
+          { server: 'srv', tool: 'tool1' },
+        ];
+        mockGetConnection.mockResolvedValue(makeConnection(textResult('data')));
+
+        const result = await client.executeStartActions({});
+
+        const timeSection = result.split('\n\n')[0];
+        const timeLine = timeSection.replace('### Current Time\n', '');
+        expect(timeLine).toMatch(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4} \(\w+day, ISO day [1-7]\)$/,
+        );
+      });
+
+      it('should use America/Detroit offset (EST or EDT)', async () => {
+        client.options.agent.start_actions = [
+          { server: 'srv', tool: 'tool1' },
+        ];
+        mockGetConnection.mockResolvedValue(makeConnection(textResult('data')));
+
+        const result = await client.executeStartActions({});
+
+        const offsetMatch = result.match(/[+-]\d{4}/);
+        expect(offsetMatch).not.toBeNull();
+        expect(['-0500', '-0400']).toContain(offsetMatch[0]);
       });
     });
   });

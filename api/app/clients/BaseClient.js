@@ -479,7 +479,10 @@ class BaseClient {
       if (editedIndices.length > 0) {
         logger.debug('[BaseClient] Truncated tool call outputs:', editedIndices);
         for (const index of editedIndices) {
-          formattedMessages[index].content = dbMessages[index].content;
+          const truncatedContent = dbMessages[index].content;
+          formattedMessages[index].content = Array.isArray(truncatedContent)
+            ? truncatedContent.filter((part) => part.type !== ContentTypes.AMBIENT_CONTEXT)
+            : truncatedContent;
         }
         orderedMessages = dbMessages;
       }
