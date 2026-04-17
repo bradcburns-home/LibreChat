@@ -80,7 +80,17 @@ function configureReasoning(
   const modelName = updatedOptions.model ?? '';
 
   if (extendedOptions.thinking && modelName && supportsAdaptiveThinking(modelName)) {
-    updatedOptions.thinking = { type: 'adaptive' };
+    // Force display: 'summarized' on adaptive thinking. Opus 4.7+ defaults to
+    // display: 'omitted', which streams only the signature with no thinking_delta.
+    // The pinned @langchain/anthropic@0.3.34 chunk merger doesn't synthesize an
+    // empty thinking field in that case, so the assistant content block goes back
+    // to the API as { type: 'thinking', signature: '...' } and Anthropic rejects
+    // it with `messages.N.content.0.thinking.thinking: Field required` on the
+    // next tool-result turn. Pinning display to 'summarized' keeps the field
+    // populated and matches Opus 4.6 behavior.
+    updatedOptions.thinking = { type: 'adaptive', display: 'summarized' } as unknown as {
+      type: 'adaptive';
+    };
 
     const effort = extendedOptions.effort;
     if (effort && effort !== AnthropicEffort.unset) {

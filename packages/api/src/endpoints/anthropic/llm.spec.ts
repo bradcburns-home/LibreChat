@@ -964,6 +964,30 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig.maxTokens).toBe(128000);
       });
 
+      it.each([
+        ['claude-opus-4-7'],
+        ['claude-opus-4-6'],
+        ['claude-sonnet-4-6'],
+        ['claude-opus-5'],
+      ])(
+        'should set display: summarized on adaptive thinking for %s (Opus 4.7+ defaults to omitted, which breaks langchain-anthropic chunk merger)',
+        (model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: {
+              model,
+              thinking: true,
+            },
+          });
+
+          const thinking = result.llmConfig.thinking as unknown as {
+            type: string;
+            display: string;
+          };
+          expect(thinking.type).toBe('adaptive');
+          expect(thinking.display).toBe('summarized');
+        },
+      );
+
       it('should set effort via output_config for adaptive thinking models', () => {
         const result = getLLMConfig('test-key', {
           modelOptions: {
