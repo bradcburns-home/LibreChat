@@ -592,6 +592,7 @@ export type TMessageContentParts =
         PartMetadata;
     } & ContentMetadata)
   | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
+  | ({ type: ContentTypes.AMBIENT_CONTEXT; ambient_context?: string } & ContentMetadata)
   | (SummaryContentPart & ContentMetadata)
   | (Agents.AgentUpdate & ContentMetadata)
   | (Agents.MessageContentImageUrl & ContentMetadata)
