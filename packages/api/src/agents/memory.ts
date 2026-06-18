@@ -396,11 +396,17 @@ ${memory ?? 'No existing memories'}`;
       thinking?: { type?: string };
       temperature?: number;
     };
+    const anthropicThinkingType = anthropicConfig.thinking?.type;
     if (
       llmConfig?.provider === Providers.ANTHROPIC &&
-      anthropicConfig.thinking?.type === 'enabled' &&
+      (anthropicThinkingType === 'enabled' || anthropicThinkingType === 'adaptive') &&
       anthropicConfig.temperature != null
     ) {
+      // Anthropic rejects `temperature` whenever thinking is active. Adaptive
+      // thinking (Opus/Sonnet >= 4.6, Fable/Mythos) forbids it just like the
+      // older `enabled` budget mode; the memory agent's hardcoded default
+      // temperature (0.4) otherwise throws "temperature is not supported when
+      // thinking is enabled" on every run for those models.
       delete (finalLLMConfig as Record<string, unknown>).temperature;
     }
 
@@ -497,8 +503,13 @@ ${memory ?? 'No existing memories'}`;
     }
     return await Promise.all(artifactPromises);
   } catch (error) {
+    // Inline the cause in the message string: the structured `{ error }` meta
+    // is dropped by some winston transports, which previously hid the real
+    // failure (e.g. "temperature is not supported when thinking is enabled")
+    // from stdout and log aggregation. Surface it loudly.
+    const detail = error instanceof Error ? error.stack || error.message : String(error);
     logger.error(
-      `[MemoryAgent] Failed to process memory | userId: ${userId} | conversationId: ${conversationId} | messageId: ${messageId}`,
+      `[MemoryAgent] Failed to process memory | userId: ${userId} | conversationId: ${conversationId} | messageId: ${messageId} | ${detail}`,
       { error },
     );
   }

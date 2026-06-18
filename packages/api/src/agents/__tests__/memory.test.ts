@@ -484,3 +484,78 @@ describe('processMemory - GPT-5+ handling', () => {
     );
   });
 });
+
+describe('processMemory - Anthropic thinking + temperature', () => {
+  let mockSetMemory: jest.Mock;
+  let mockDeleteMemory: jest.Mock;
+  let mockRes: Partial<Response>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSetMemory = jest.fn().mockResolvedValue({ ok: true });
+    mockDeleteMemory = jest.fn().mockResolvedValue({ ok: true });
+    mockRes = { headersSent: false, write: jest.fn() };
+    const { Run } = jest.requireMock('@librechat/agents');
+    (Run.create as jest.Mock).mockResolvedValue({
+      processStream: jest.fn().mockResolvedValue('Memory processed'),
+    });
+  });
+
+  const getLlmConfig = () => {
+    const { Run } = jest.requireMock('@librechat/agents');
+    return (Run.create as jest.Mock).mock.calls[0][0].graphConfig.llmConfig;
+  };
+
+  const runWith = (llmConfig: Record<string, unknown>) =>
+    processMemory({
+      res: mockRes as Response,
+      userId: 'test-user',
+      setMemory: mockSetMemory,
+      deleteMemory: mockDeleteMemory,
+      messages: [],
+      memory: 'Test memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      instructions: 'Test instructions',
+      llmConfig,
+    });
+
+  it('removes temperature for adaptive thinking (Opus/Sonnet >= 4.6, Fable)', async () => {
+    await runWith({
+      provider: Providers.ANTHROPIC,
+      model: 'claude-sonnet-4-6',
+      temperature: 0.4,
+      thinking: { type: 'adaptive' },
+    });
+    expect(getLlmConfig().temperature).toBeUndefined();
+  });
+
+  it('removes temperature for enabled (budget) thinking', async () => {
+    await runWith({
+      provider: Providers.ANTHROPIC,
+      model: 'claude-sonnet-4-5',
+      temperature: 0.4,
+      thinking: { type: 'enabled', budget_tokens: 2000 },
+    });
+    expect(getLlmConfig().temperature).toBeUndefined();
+  });
+
+  it('keeps temperature when thinking is disabled', async () => {
+    await runWith({
+      provider: Providers.ANTHROPIC,
+      model: 'claude-sonnet-4-5',
+      temperature: 0.7,
+      thinking: { type: 'disabled' },
+    });
+    expect(getLlmConfig().temperature).toBe(0.7);
+  });
+
+  it('keeps temperature when no thinking is set', async () => {
+    await runWith({
+      provider: Providers.ANTHROPIC,
+      model: 'claude-sonnet-4-5',
+      temperature: 0.7,
+    });
+    expect(getLlmConfig().temperature).toBe(0.7);
+  });
+});
