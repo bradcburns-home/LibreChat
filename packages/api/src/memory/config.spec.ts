@@ -2,7 +2,12 @@ import { logger } from '@librechat/data-schemas';
 
 import type { TCustomConfig } from 'librechat-data-provider';
 
-import { isMemoryAgentEnabled, isMemoryEnabled, loadMemoryConfig } from './config';
+import {
+  isMemoryAgentEnabled,
+  isMemoryEnabled,
+  isMemoryExcludedEndpoint,
+  loadMemoryConfig,
+} from './config';
 
 describe('memory config', () => {
   it('keeps memory enabled without configuring an automatic memory agent', () => {
@@ -77,5 +82,32 @@ describe('memory config', () => {
 
     expect(isMemoryEnabled(loaded)).toBe(false);
     expect(isMemoryAgentEnabled(loaded)).toBe(false);
+  });
+
+  describe('isMemoryExcludedEndpoint', () => {
+    const config: TCustomConfig['memory'] = {
+      personalize: true,
+      excludedEndpoints: ['GCP LLM Eval', 'GCP LLM Eval MS4'],
+    };
+
+    it('excludes listed endpoints case-insensitively', () => {
+      const loaded = loadMemoryConfig(config);
+      expect(isMemoryExcludedEndpoint(loaded, 'GCP LLM Eval')).toBe(true);
+      expect(isMemoryExcludedEndpoint(loaded, 'gcp llm eval ms4')).toBe(true);
+    });
+
+    it('does not exclude unlisted endpoints', () => {
+      const loaded = loadMemoryConfig(config);
+      expect(isMemoryExcludedEndpoint(loaded, 'anthropic')).toBe(false);
+      expect(isMemoryExcludedEndpoint(loaded, 'agents')).toBe(false);
+    });
+
+    it('is a no-op without config, endpoint, or exclusion list', () => {
+      expect(isMemoryExcludedEndpoint(undefined, 'GCP LLM Eval')).toBe(false);
+      expect(isMemoryExcludedEndpoint(loadMemoryConfig(config), undefined)).toBe(false);
+      expect(isMemoryExcludedEndpoint(loadMemoryConfig({ personalize: true }), 'GCP LLM Eval')).toBe(
+        false,
+      );
+    });
   });
 });

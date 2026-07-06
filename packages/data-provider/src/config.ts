@@ -1317,6 +1317,11 @@ export const memorySchema = z.object({
   charLimit: z.number().optional().default(10000),
   personalize: z.boolean().default(true),
   messageWindowSize: z.number().optional().default(5),
+  /** Endpoint names (or agent providers) for which memory is fully skipped:
+   * no memory reads injected, no memory agent processing. Used to keep
+   * privacy-sensitive endpoints (e.g. local-model testbenches) out of the
+   * memory pipeline and its downstream consumers. */
+  excludedEndpoints: z.array(z.string()).optional(),
   agent: z
     .union([
       z.object({

@@ -20,6 +20,7 @@ const {
   createTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
+  isMemoryExcludedEndpoint,
   recordCollectedUsage,
   isDeepSeekReasoningProvider,
   GenerationJobManager,
@@ -539,6 +540,17 @@ class AgentClient extends BaseClient {
     const appConfig = this.options.req.config;
     const memoryConfig = appConfig.memory;
     if (!memoryConfig || memoryConfig.disabled === true) {
+      return;
+    }
+
+    /** Privacy gate: endpoints listed in `memory.excludedEndpoints` get no
+     * memory injection and no memory-agent processing. Conversations on these
+     * endpoints stay out of `memoryentries` and everything downstream of it
+     * (sleep_cycle / biographer / third-party analysis providers). */
+    if (isMemoryExcludedEndpoint(memoryConfig, this.options.endpoint)) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #useMemory] memory skipped for excluded endpoint "${this.options.endpoint}"`,
+      );
       return;
     }
 

@@ -31,6 +31,21 @@ export function isMemoryEnabled(config: TMemoryConfig | undefined): boolean {
   return !isDisabled(config);
 }
 
+/** True when `endpoint` is listed in `memory.excludedEndpoints` — such
+ * conversations get no memory injection and no memory-agent processing.
+ * Matching is case-insensitive on the endpoint name as stored on the
+ * conversation (custom endpoint display name, or e.g. 'anthropic'). */
+export function isMemoryExcludedEndpoint(
+  config: TMemoryConfig | undefined,
+  endpoint?: string | null,
+): boolean {
+  if (!config || !endpoint) return false;
+  const excluded = config.excludedEndpoints;
+  if (!excluded || excluded.length === 0) return false;
+  const needle = endpoint.toLowerCase();
+  return excluded.some((e) => typeof e === 'string' && e.toLowerCase() === needle);
+}
+
 export function isMemoryAgentEnabled(config: TMemoryConfig | undefined): boolean {
   if (!isMemoryEnabled(config)) return false;
   return config?.agent?.enabled === true && hasValidAgent(config.agent);
