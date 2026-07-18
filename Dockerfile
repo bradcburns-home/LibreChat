@@ -1,7 +1,8 @@
 # v0.8.6
 
 # Base node image
-FROM node:20-alpine AS node
+# Node 24 required by @librechat/agents >=3.2.33 (see api/package.json)
+FROM node:24.16.0-alpine AS node
 
 RUN apk upgrade --no-cache
 RUN apk add --no-cache jemalloc
