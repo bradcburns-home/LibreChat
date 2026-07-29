@@ -4,7 +4,7 @@ import { KnownEndpoints, EModelEndpoint } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
-import { getGoogleConfig } from '~/endpoints/google/llm';
+import { getGoogleConfig, stripGeminiFlashBlockedParams } from '~/endpoints/google/llm';
 import { transformToOpenAIConfig } from './transform';
 import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
@@ -136,9 +136,19 @@ export function getOpenAIConfig(
       },
       true,
     );
-    /** Transform handles addParams/dropParams - it knows about OpenAI params */
+    /**
+     * Transform handles addParams/dropParams - it knows about OpenAI params.
+     * `getGoogleConfig` already stripped Flash-blocked params from `llmConfig`,
+     * but the transform re-applies `addParams` raw, which would undo that; strip
+     * them from the forwarded `addParams` too so the model does not receive
+     * params it rejects. `defaultParams` is applied inside `getGoogleConfig`
+     * (and only read here for tool detection), so it needs no sanitizing.
+     */
     const transformed = transformToOpenAIConfig({
-      addParams,
+      addParams: stripGeminiFlashBlockedParams(
+        addParams,
+        (googleResult.llmConfig as { model?: string }).model,
+      ),
       dropParams,
       defaultParams,
       tools: googleResult.tools,
