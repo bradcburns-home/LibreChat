@@ -129,6 +129,7 @@ const googleModels = {
   'gemini-3.5-flash': 1048576,
   'gemini-3.5-flash-lite': 1048576,
   'gemini-3.6-flash': 1048576,
+  'gemini-3.7-flash': 1048576,
 };
 
 const anthropicModels = {
