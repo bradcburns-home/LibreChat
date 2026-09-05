@@ -55,9 +55,18 @@ RUN \
 COPY --chown=node:node . .
 
 RUN \
-    # React client build with configurable memory
-    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
-    npm prune --production; \
+    # React client build with configurable memory.
+    #
+    # Every step MUST be `&&`-chained so a failure anywhere hard-fails the
+    # image build. A bare `;` here previously let a failed rollup
+    # TypeScript build (missing packages/data-provider/dist) produce a
+    # "successfully built" image that crash-looped in production the
+    # moment it was deployed -- because with `cmd1; cmd2; cmd3`, the RUN
+    # step's exit status is only ever cmd3's, regardless of whether cmd1
+    # failed. See labdocs/services/librechat/OPERATIONS.md, dated entry on
+    # the Gemini 3.7 backport.
+    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend && \
+    npm prune --production && \
     npm cache clean --force
 
 # Optional build metadata surfaced in Settings -> About for support triage.
