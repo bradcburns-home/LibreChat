@@ -7,6 +7,13 @@ module.exports = {
   testTimeout: 30000, // 30 seconds timeout for all tests
   setupFiles: ['./test/jestSetup.js', './test/__mocks__/logger.js'],
   moduleNameMapper: {
+    /**
+     * `@librechat/agents` (>=3.4.7) eagerly loads `@langchain/mistralai`, which
+     * requires the ESM-only `@mistralai/mistralai` and crashes Jest's CJS runtime
+     * on any suite that imports agents at all (including `jest.requireActual`).
+     * See test/__mocks__/langchainMistralAI.js.
+     */
+    '^@langchain/mistralai$': '<rootDir>/test/__mocks__/langchainMistralAI.js',
     '~/(.*)': '<rootDir>/$1',
     '~/data/auth.json': '<rootDir>/__mocks__/auth.mock.json',
     '^openid-client/passport$': '<rootDir>/test/__mocks__/openid-client-passport.js',

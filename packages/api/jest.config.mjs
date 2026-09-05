@@ -24,6 +24,12 @@ export default {
     ],
   },
   moduleNameMapper: {
+    /**
+     * `@librechat/agents` (>=3.4.7) eagerly loads `@langchain/mistralai`, which
+     * requires the ESM-only `@mistralai/mistralai` and crashes Jest's CJS runtime
+     * on any suite that imports agents at all. See test/stubs/mistralai.ts.
+     */
+    '^@langchain/mistralai$': '<rootDir>/test/stubs/mistralai.ts',
     '^@src/(.*)$': '<rootDir>/src/$1',
     '~/(.*)': '<rootDir>/src/$1',
   },
