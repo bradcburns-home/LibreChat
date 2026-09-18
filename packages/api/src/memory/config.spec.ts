@@ -109,5 +109,18 @@ describe('memory config', () => {
         false,
       );
     });
+
+    it('excludes when any candidate matches (saved-agent provider hole, Birmingham-Ops#445)', () => {
+      const loaded = loadMemoryConfig({
+        personalize: true,
+        excludedEndpoints: ['BB-AMG Ollama', 'GCP LLM Eval'],
+      });
+      // Saved agents store the conversation endpoint as 'agents'; the local
+      // provider lives on agent.endpoint. Either candidate must be enough.
+      expect(isMemoryExcludedEndpoint(loaded, 'agents', 'BB-AMG Ollama')).toBe(true);
+      expect(isMemoryExcludedEndpoint(loaded, 'BB-AMG Ollama')).toBe(true);
+      expect(isMemoryExcludedEndpoint(loaded, 'agents', 'anthropic')).toBe(false);
+      expect(isMemoryExcludedEndpoint(loaded, 'agents')).toBe(false);
+    });
   });
 });

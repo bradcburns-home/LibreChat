@@ -31,19 +31,30 @@ export function isMemoryEnabled(config: TMemoryConfig | undefined): boolean {
   return !isDisabled(config);
 }
 
-/** True when `endpoint` is listed in `memory.excludedEndpoints` — such
- * conversations get no memory injection and no memory-agent processing.
- * Matching is case-insensitive on the endpoint name as stored on the
- * conversation (custom endpoint display name, or e.g. 'anthropic'). */
+/** True when any candidate name is listed in `memory.excludedEndpoints`.
+ * Conversations on those endpoints get no memory injection and no
+ * memory-agent processing.
+ *
+ * Pass every name the conversation is known by. Saved agents store
+ * `options.endpoint` as `'agents'` (so a single-name check against the
+ * conversation endpoint silently misses them — Birmingham-Ops#445);
+ * `agent.endpoint` is rewritten to the underlying provider during
+ * `initializeAgent` (e.g. `'BB-AMG Ollama'`). Matching is
+ * case-insensitive. Empty / missing candidates are ignored. */
 export function isMemoryExcludedEndpoint(
   config: TMemoryConfig | undefined,
-  endpoint?: string | null,
+  ...candidates: Array<string | null | undefined>
 ): boolean {
-  if (!config || !endpoint) return false;
+  if (!config) return false;
   const excluded = config.excludedEndpoints;
   if (!excluded || excluded.length === 0) return false;
-  const needle = endpoint.toLowerCase();
-  return excluded.some((e) => typeof e === 'string' && e.toLowerCase() === needle);
+  const needles = excluded
+    .filter((e): e is string => typeof e === 'string' && e.length > 0)
+    .map((e) => e.toLowerCase());
+  if (needles.length === 0) return false;
+  return candidates.some(
+    (c) => typeof c === 'string' && c.length > 0 && needles.includes(c.toLowerCase()),
+  );
 }
 
 export function isMemoryAgentEnabled(config: TMemoryConfig | undefined): boolean {

@@ -516,6 +516,57 @@ describe('AgentClient - titleConvo', () => {
       }
     });
 
+    it('should not follow titleEndpoint off-box for excluded local endpoints (Birmingham-Ops#445)', async () => {
+      const originalApiKey = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+
+      mockAgent.endpoint = EModelEndpoint.openAI;
+      mockAgent.provider = EModelEndpoint.openAI;
+      mockOptions.endpoint = EModelEndpoint.agents;
+      client = new AgentClient(mockOptions);
+      client.run = mockRun;
+      client.responseMessageId = 'response-123';
+      client.conversationId = 'convo-123';
+      client.contentParts = [{ type: 'text', text: 'Test content' }];
+      client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+      mockReq.config = {
+        memory: {
+          excludedEndpoints: [EModelEndpoint.openAI],
+        },
+        endpoints: {
+          all: {
+            titleConvo: true,
+            titleModel: 'claude-3-haiku-20240307',
+            titleMethod: 'completion',
+            titleEndpoint: EModelEndpoint.anthropic,
+          },
+          [EModelEndpoint.openAI]: {
+            titleConvo: true,
+            titleModel: 'gpt-4',
+            titleMethod: 'completion',
+          },
+        },
+      };
+
+      await client.titleConvo({ text: 'local chat', abortController: new AbortController() });
+
+      expect(mockRun.generateTitle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: Providers.OPENAI,
+        }),
+      );
+      const generateTitleCall = mockRun.generateTitle.mock.calls[0][0];
+      expect(generateTitleCall.clientOptions.model).toBe('gpt-4');
+      expect(generateTitleCall.clientOptions.model).not.toBe('claude-3-haiku-20240307');
+
+      if (originalApiKey) {
+        process.env.ANTHROPIC_API_KEY = originalApiKey;
+      } else {
+        delete process.env.ANTHROPIC_API_KEY;
+      }
+    });
+
     it('should use all config when endpoint config is missing', async () => {
       // Set 'all' config without endpoint-specific config
       mockReq.config = {
@@ -2590,6 +2641,68 @@ describe('AgentClient - titleConvo', () => {
         }),
         expect.any(Object),
       );
+    });
+
+    it('should skip memory when the conversation endpoint is excluded', async () => {
+      mockReq.config.memory.excludedEndpoints = ['BB-AMG Ollama'];
+      mockCheckAccess.mockResolvedValue(true);
+
+      mockOptions.endpoint = 'BB-AMG Ollama';
+      mockAgent.endpoint = 'BB-AMG Ollama';
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      const result = await client.useMemory();
+
+      expect(result).toBeUndefined();
+      expect(mockGetFormattedMemories).not.toHaveBeenCalled();
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+      expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
+    });
+
+    it('should skip memory for a saved local-model agent on the agents endpoint (Birmingham-Ops#445)', async () => {
+      // Saved agents persist endpoint as 'agents'; the local provider is on agent.endpoint.
+      mockReq.config.memory.excludedEndpoints = ['BB-AMG Ollama'];
+      mockCheckAccess.mockResolvedValue(true);
+
+      mockOptions.endpoint = EModelEndpoint.agents;
+      mockAgent.endpoint = 'BB-AMG Ollama';
+      mockAgent.provider = EModelEndpoint.openAI; // initializeAgent normalizes custom providers to openai
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      const result = await client.useMemory();
+
+      expect(result).toBeUndefined();
+      expect(mockGetFormattedMemories).not.toHaveBeenCalled();
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+      expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
+    });
+
+    it('should not skip memory for a frontier agent on the agents endpoint', async () => {
+      mockReq.config.memory.excludedEndpoints = ['BB-AMG Ollama'];
+      mockCheckAccess.mockResolvedValue(true);
+      mockInitializeAgent.mockResolvedValue({
+        ...mockAgent,
+        provider: EModelEndpoint.anthropic,
+      });
+      mockCreateMemoryProcessor.mockResolvedValue([undefined, jest.fn()]);
+
+      mockOptions.endpoint = EModelEndpoint.agents;
+      mockAgent.endpoint = EModelEndpoint.anthropic;
+      mockAgent.provider = EModelEndpoint.anthropic;
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      await client.useMemory();
+
+      expect(mockInitializeAgent).toHaveBeenCalled();
+      expect(mockCreateMemoryProcessor).toHaveBeenCalled();
     });
   });
 

@@ -546,10 +546,21 @@ class AgentClient extends BaseClient {
     /** Privacy gate: endpoints listed in `memory.excludedEndpoints` get no
      * memory injection and no memory-agent processing. Conversations on these
      * endpoints stay out of `memoryentries` and everything downstream of it
-     * (sleep_cycle / biographer / third-party analysis providers). */
-    if (isMemoryExcludedEndpoint(memoryConfig, this.options.endpoint)) {
+     * (sleep_cycle / biographer / third-party analysis providers).
+     *
+     * Check both the conversation endpoint AND the agent's underlying
+     * provider. Saved agents always have `options.endpoint === 'agents'`,
+     * so a local-model agent (provider `BB-AMG Ollama`) would otherwise
+     * leak into the Anthropic memory agent (Birmingham-Ops#445). */
+    if (
+      isMemoryExcludedEndpoint(
+        memoryConfig,
+        this.options.endpoint,
+        this.options.agent?.endpoint,
+      )
+    ) {
       logger.debug(
-        `[api/server/controllers/agents/client.js #useMemory] memory skipped for excluded endpoint "${this.options.endpoint}"`,
+        `[api/server/controllers/agents/client.js #useMemory] memory skipped for excluded endpoint "${this.options.endpoint}" (agent.endpoint="${this.options.agent?.endpoint}")`,
       );
       return;
     }
@@ -1357,11 +1368,22 @@ class AgentClient extends BaseClient {
       model: agent.model || agent.model_parameters.model,
     };
 
+    /** Local/private endpoints must not have their transcript forwarded to a
+     * remote title model. `endpoints.all` is a `??` short-circuit that would
+     * otherwise replace the per-endpoint title config (including a
+     * `titleEndpoint: anthropic` redirect). Saved local-model agents are
+     * included via `agent.endpoint` — same pairing as `useMemory`. */
+    const stayOnBox = isMemoryExcludedEndpoint(
+      appConfig.memory,
+      this.options.endpoint,
+      agent.endpoint,
+    );
+
     let titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
 
     /** @type {TEndpoint | undefined} */
     const endpointConfig =
-      appConfig.endpoints?.all ??
+      (stayOnBox ? undefined : appConfig.endpoints?.all) ??
       appConfig.endpoints?.[endpoint] ??
       titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
@@ -1377,7 +1399,11 @@ class AgentClient extends BaseClient {
       return;
     }
 
-    if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
+    if (
+      !stayOnBox &&
+      endpointConfig?.titleEndpoint &&
+      endpointConfig.titleEndpoint !== endpoint
+    ) {
       try {
         titleProviderConfig = getProviderConfig({
           provider: endpointConfig.titleEndpoint,
